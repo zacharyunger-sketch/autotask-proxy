@@ -1078,13 +1078,35 @@ async function apiFetch(path, options = {}) {
   return res.json();
 }
 
+// Normalize tickets from old proxy format (numeric status/priority) to string format
+const _STATUS_MAP = {1:'New',5:'Complete',6:'Waiting Customer',7:'Waiting Materials',8:'In Progress',9:'Scheduled',10:'Escalate',11:'Problem',13:'Denied',14:'Resolved',15:'Customer Contacted',16:'Pending',17:'Waiting Parts'};
+const _PRIORITY_MAP = {1:'Critical',2:'High',3:'Medium',4:'Low'};
+const _RESOURCE_MAP = {29682885:'David Unger',29682886:'Joseph Khoury',29682891:'Tom Munro',29682895:'Jarred Rey',29682896:'Alex Inglis',29682901:'Zach Unger',29683496:'Mustafa Moghul'};
+function normalizeTicket(t) {
+  return {
+    ...t,
+    status: typeof t.status === 'number' ? (_STATUS_MAP[t.status] || String(t.status)) : t.status,
+    statusId: typeof t.status === 'number' ? t.status : t.statusId,
+    priority: typeof t.priority === 'number' ? (_PRIORITY_MAP[t.priority] || String(t.priority)) : t.priority,
+    priorityId: typeof t.priority === 'number' ? t.priority : t.priorityId,
+    assignedResource: t.assignedResource || (t.assignedResourceID ? (_RESOURCE_MAP[t.assignedResourceID] || '') : ''),
+    queueName: t.queueName || '',
+    companyName: t.companyName || '',
+    description: t.description || '',
+  };
+}
+function normalizeTickets(data) {
+  if (data?.tickets) data.tickets = data.tickets.map(normalizeTicket);
+  return data;
+}
+
 async function mcpCall(tool, args = {}) {
   // ── Autotask read tools ──────────────────────────────────────────────
   if (tool === 'mcp__autotask__get_open_tickets') {
     const p = new URLSearchParams();
     if (args.company) p.set('company', args.company);
     if (args.limit) p.set('limit', args.limit);
-    return apiFetch('/api/tickets?' + p);
+    return normalizeTickets(await apiFetch('/api/tickets?' + p));
   }
   if (tool === 'mcp__autotask__get_ticket') {
     const p = new URLSearchParams();
@@ -1099,10 +1121,21 @@ async function mcpCall(tool, args = {}) {
     if (args.keyword) p.set('keyword', args.keyword);
     if (args.company) p.set('company', args.company);
     if (args.limit) p.set('limit', args.limit);
-    return apiFetch('/api/closed?' + p);
+    return normalizeTickets(await apiFetch('/api/closed?' + p));
   }
   if (tool === 'mcp__autotask__get_resources') return apiFetch('/api/resources');
-  if (tool === 'mcp__autotask__get_sla_stats') return apiFetch('/api/sla');
+  if (tool === 'mcp__autotask__get_sla_stats') {
+    // Compute SLA from already-loaded open tickets (faster + accurate)
+    const tickets = (typeof ALL_TICKETS !== 'undefined' && ALL_TICKETS.length) ? ALL_TICKETS : [];
+    const now = new Date();
+    let onTime = 0, breached = 0, noSla = 0;
+    tickets.forEach(t => {
+      if (!t.dueDateTime) { noSla++; return; }
+      if (new Date(t.dueDateTime) >= now) onTime++; else breached++;
+    });
+    const total = onTime + breached;
+    return { total: tickets.length, onTime, breached, noSla, attainment: total > 0 ? Math.round((onTime / total) * 100) : 100 };
+  }
   if (tool === 'mcp__autotask__get_contracts') {
     const p = new URLSearchParams();
     if (args.company) p.set('company', args.company);
