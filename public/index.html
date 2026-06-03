@@ -3437,7 +3437,13 @@ async function loadAll(){
     ALL_TICKETS=ticketsR?.tickets||[];
     ALL_OPPS=oppsR?.opportunities||[];
     ALL_PROJECTS=projsR?.projects||[];
-    const sla=slaR||{total:ALL_TICKETS.length,overdue:0,onTime:ALL_TICKETS.length,slaAttainment:100};
+    // Compute SLA now that ALL_TICKETS is populated
+    const now = new Date();
+    let slaOnTime = 0, slaBreached = 0;
+    ALL_TICKETS.forEach(t => { if (t.dueDateTime) { if (new Date(t.dueDateTime) >= now) slaOnTime++; else slaBreached++; } });
+    const slaTot = slaOnTime + slaBreached;
+    const slaAttainmentPct = slaTot > 0 ? Math.round((slaOnTime / slaTot) * 100) : 100;
+    const sla = { total: ALL_TICKETS.length, overdue: slaBreached, onTime: slaOnTime, slaAttainment: slaAttainmentPct, attainment: slaAttainmentPct };
     const activeProjects=ALL_PROJECTS.filter(p=>p.completedPercentage<100);
 
     // Scorecard
