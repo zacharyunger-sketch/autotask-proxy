@@ -1,0 +1,7 @@
+{
+  "name": "autotask-proxy",
+  "version": "1.0.0",
+  "description": "Autotask dashboard and API proxy for Neuro Building Systems",
+  "private": true,
+  "dependencies": {}
+}
